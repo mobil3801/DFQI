@@ -1,23 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from 'react-query'
-import axios from 'axios'
-// Performance issue: Importing entire lodash
-import _ from 'lodash'
+// Performance fix: Import only what we need
+import { orderBy } from 'lodash'
 import ProductCard from '../components/ProductCard'
 import SearchBar from '../components/SearchBar'
 import FilterPanel from '../components/FilterPanel'
-
-// Performance issue: Large mock data array
-const mockProducts = Array.from({ length: 1000 }, (_, i) => ({
-  id: i + 1,
-  name: `Product ${i + 1}`,
-  price: Math.random() * 1000,
-  category: ['Electronics', 'Clothing', 'Books', 'Home'][Math.floor(Math.random() * 4)],
-  rating: Math.random() * 5,
-  image: `https://picsum.photos/300/200?random=${i}`,
-  description: `This is a detailed description for product ${i + 1} that contains a lot of text to simulate real product descriptions.`
-}))
+import { useProducts } from '../lib/useSupabase'
 
 const ProductList = () => {
   const [searchTerm, setSearchTerm] = useState('')
@@ -26,29 +14,18 @@ const ProductList = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(20)
 
-  // Performance issue: Fetching all data at once without pagination
-  const { data: products = mockProducts, isLoading, error } = useQuery(
-    'products',
-    async () => {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return mockProducts
-    },
-    {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-    }
-  )
+  // Performance fix: Use Supabase with React Query
+  const { data: products = [], isLoading, error } = useProducts()
 
-  // Performance issue: Expensive filtering and sorting on every render
-  const filteredAndSortedProducts = React.useMemo(() => {
+  // Performance fix: Memoized filtering and sorting
+  const filteredAndSortedProducts = useMemo(() => {
     let filtered = products
 
     // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchTerm.toLowerCase())
+        (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
 
@@ -58,37 +35,39 @@ const ProductList = () => {
     }
 
     // Sort products
-    filtered = _.orderBy(filtered, [sortBy], ['asc'])
+    filtered = orderBy(filtered, [sortBy], ['asc'])
 
     return filtered
   }, [products, searchTerm, filters, sortBy])
 
-  // Performance issue: Calculating pagination on every render
-  const paginatedProducts = filteredAndSortedProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+  // Performance fix: Memoized pagination
+  const paginatedProducts = useMemo(() => 
+    filteredAndSortedProducts.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    ), [filteredAndSortedProducts, currentPage, itemsPerPage]
   )
 
   const totalPages = Math.ceil(filteredAndSortedProducts.length / itemsPerPage)
 
-  // Performance issue: Inline event handlers creating new functions on every render
-  const handleSearch = (term: string) => {
+  // Performance fix: Memoized event handlers
+  const handleSearch = useCallback((term: string) => {
     setSearchTerm(term)
     setCurrentPage(1)
-  }
+  }, [])
 
-  const handleFilterChange = (newFilters: any) => {
+  const handleFilterChange = useCallback((newFilters: any) => {
     setFilters(newFilters)
     setCurrentPage(1)
-  }
+  }, [])
 
-  const handleSortChange = (newSortBy: string) => {
+  const handleSortChange = useCallback((newSortBy: string) => {
     setSortBy(newSortBy)
-  }
+  }, [])
 
-  const handlePageChange = (page: number) => {
+  const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page)
-  }
+  }, [])
 
   if (isLoading) return <div>Loading...</div>
   if (error) return <div>Error loading products</div>
